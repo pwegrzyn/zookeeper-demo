@@ -40,6 +40,16 @@ public class App {
                         LOGGER.severe("Error while print tree!");
                     }
                     break;
+                case "app":
+                    try {
+                        line = input.readLine().toLowerCase().trim();
+                    } catch (IOException e) {
+                        LOGGER.warning("Error while reading input from user!");
+                        running = false;
+                        continue;
+                    }
+                    zkManager.setApp(line);
+                    break;
                 case "quit":
                 case "exit":
                     running = false;

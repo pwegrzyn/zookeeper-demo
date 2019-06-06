@@ -15,7 +15,7 @@ public class ZKManager {
     private final String watchedZnode;
     private static final String ZK_SERVERS = "localhost:2181,localhost:2182,localhost:2183";
     private static final int sessionTimeout = 5000;
-    private static final String appToRun = "notepad";
+    private String appToRun;
     private final ZnodeWatcher znodeWatcher;
     private final ChildrenWatcher childrenWatcher;
 
@@ -47,6 +47,10 @@ public class ZKManager {
         printTree(this.watchedZnode);
     }
 
+    public void setApp(String appName) {
+        this.appToRun = appName;
+    }
+
     private void printTree(String znode) throws KeeperException, InterruptedException {
         if (this.zooKeeper.exists(this.watchedZnode, false) == null) {
             System.out.println("The tree has no Z root!");
@@ -71,6 +75,10 @@ public class ZKManager {
     }
 
     private void runApplication(String command)  {
+        if (command == null) {
+            System.out.println("App not specified! Can't open.");
+            return;
+        }
         Runtime run = Runtime.getRuntime();
         String[] cmd = new String[3];
         cmd[0] = "cmd.exe" ;
@@ -85,12 +93,16 @@ public class ZKManager {
     }
 
     private void stopApplication() {
+        if (this.appToRun == null) {
+            System.out.println("App not specified! Can't close.");
+            return;
+        }
         try {
-            Runtime.getRuntime().exec("taskkill /F /IM " + ZKManager.appToRun + ".exe");
+            Runtime.getRuntime().exec("taskkill /F /IM " + this.appToRun + ".exe");
+            System.out.println("Stopped custom app.");
         } catch (IOException e) {
             LOGGER.severe("Error while force-closing app!");
         }
-        System.out.println("Stopped custom app.");
     }
 
 
@@ -101,12 +113,13 @@ public class ZKManager {
             switch (event.getType()) {
                 case NodeCreated:
                     try {
+                        // Start watching children
                         ZKManager.this.zooKeeper.getChildren(ZKManager.this.watchedZnode, ZKManager.this.childrenWatcher);
                     } catch (KeeperException | InterruptedException e) {
                         LOGGER.severe("Error while setting up children watcher!");
                         return;
                     }
-                    ZKManager.this.runApplication(ZKManager.appToRun);
+                    ZKManager.this.runApplication(ZKManager.this.appToRun);
                     break;
                 case NodeDeleted:
                     ZKManager.this.stopApplication();
@@ -114,6 +127,7 @@ public class ZKManager {
                 default: break;
             }
             try {
+                // Call self again
                 ZKManager.this.zooKeeper.exists(ZKManager.this.watchedZnode, this);
             } catch (KeeperException | InterruptedException e) {
                 LOGGER.severe("Error while setting the lasting Z node watcher!");
@@ -130,13 +144,22 @@ public class ZKManager {
             switch (event.getType()) {
                 case NodeChildrenChanged:
                     try {
-                        System.out.println("The Z node has currently: " + ZKManager.this.countChildren(ZKManager.this.watchedZnode) + " children.");
+                        // Print new number of children
+                        int newChildrenCount = ZKManager.this.countChildren(ZKManager.this.watchedZnode);
+                        System.out.println("The Z node has currently: " + newChildrenCount + " children.");
+
+                        // Start watching the children's children
+                        List<String> children = ZKManager.this.zooKeeper.getChildren(event.getPath(), null);
+                        for (String child : children) {
+                            ZKManager.this.zooKeeper.getChildren(event.getPath() + "/" + child, this);
+                        }
                     } catch (KeeperException | InterruptedException e) {
                         LOGGER.severe("Error while counting children during children creation/deletion!");
                         return;
                     }
                     try {
-                        ZKManager.this.zooKeeper.getChildren(ZKManager.this.watchedZnode, this);
+                        // Call self again
+                        ZKManager.this.zooKeeper.getChildren(event.getPath(), this);
                     } catch (KeeperException | InterruptedException e) {
                         LOGGER.severe("Error while setting the lasting children watcher!");
                         return;
